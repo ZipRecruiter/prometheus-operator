@@ -31,7 +31,7 @@ $ gozr update-modules
 $ gozr gta
 ```
 
-If all of the above succeeds...
+If all of the above succeeds, remove the added `replace` in the step above, then:
 
 ```
 $ cd $ZRPO
