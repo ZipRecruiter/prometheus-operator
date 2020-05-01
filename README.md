@@ -9,7 +9,7 @@ A copy of https://github.com/coreos/prometheus-operator without the cruft that w
 $ export TMPROOT="$(pwd)/temp"
 $ mkdir $TMPROOT && cd $TMPROOT
 $ export COREOSPO=$TMPROOT/original/promtheus-operator
-$ export COREOSVERSION="v.0.38.1" # NOTE: When updating, change this version
+$ export COREOSVERSION="v0.38.1" # NOTE: When updating, change this version
 $ export ZRPO=$TMPROOT/ZipRecruiter/promtheus-operator
 $ git clone https://github.com/coreos/prometheus-operator.git $COREOSPO
 $ git clone https://github.com/ZipRecruiter/prometheus-operator.git $ZRPO
