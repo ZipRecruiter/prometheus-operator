@@ -17,6 +17,7 @@ $ cd $COREOS && git checkout $COREOSVERSION
 $ cp -r $COREOSPO/pkg $ZRPO/
 $ cp $COREOSPO/go.mod $ZRPO/
 $ cd $ZRPO/
+$ find . -name '*.go' | xargs sed -i 's/github\.com\/coreos\/prometheus-operator/github.com\/ZipRecruiter\/prometheus-operator/g'
 $ go mod tidy  # NOTE: This command might fail, that's probably fine
 # manually remove all `replace` statements from go.mod
 $ go mod edit --require k8s.io/client-go@v0.16.7
