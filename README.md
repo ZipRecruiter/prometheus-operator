@@ -1,5 +1,5 @@
 # prometheus-operator
-A copy of https://github.com/coreos/prometheus-operator without the cruft that we don't need, and with modules dependencies that match those of our monorepo.
+A copy of https://github.com/prometheus-operator/prometheus-operator without the cruft that we don't need, and with modules dependencies that match those of our monorepo.
 
 # Steps to create this
 
@@ -11,13 +11,14 @@ $ mkdir $TMPROOT && cd $TMPROOT
 $ export COREOSPO=$TMPROOT/original/promtheus-operator
 $ export COREOSVERSION="v0.38.1" # NOTE: When updating, change this version
 $ export ZRPO=$TMPROOT/ZipRecruiter/promtheus-operator
-$ git clone https://github.com/coreos/prometheus-operator.git $COREOSPO
+$ git clone https://github.com/prometheus-operator/prometheus-operator.git $COREOSPO
 $ git clone https://github.com/ZipRecruiter/prometheus-operator.git $ZRPO
 $ cd $COREOS && git checkout $COREOSVERSION
 $ cp -r $COREOSPO/pkg $ZRPO/
 $ cp $COREOSPO/go.mod $ZRPO/
 $ cd $ZRPO/
-$ find . -name '*.go' | xargs sed -i 's/github\.com\/coreos\/prometheus-operator/github.com\/ZipRecruiter\/prometheus-operator/g'
+# on macOS built in sed will not work this way, install and use gsed from brew
+$ find . -name '*.go' | xargs sed -i 's/github\.com\/prometheus-operator\/prometheus-operator/github.com\/ZipRecruiter\/prometheus-operator/g'
 $ go mod tidy  # NOTE: This command might fail, that's probably fine
 # manually remove all `replace` statements from go.mod
 $ go mod edit --require k8s.io/client-go@v0.16.7
@@ -28,6 +29,8 @@ To test the update, in the ZR monorepo:
 
 ```
 $ go mod edit --replace github.com/ZipRecruiter/prometheus-operator=$ZRPO
+$ go mod edit --replace github.com/ZipRecruiter/prometheus-operator/pkg/client=$ZRPO/pkg/client
+$ go mod edit --replace github.com/ZipRecruiter/prometheus-operator/pkg/apis/monitoring=$ZRPO/pkg/apis/monitoring
 $ gozr update-modules
 $ gozr gta
 ```
