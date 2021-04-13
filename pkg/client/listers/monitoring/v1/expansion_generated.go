@@ -1,4 +1,4 @@
-// Copyright 2018 The prometheus-operator Authors
+// Copyright The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -31,6 +31,14 @@ type PodMonitorListerExpansion interface{}
 // PodMonitorNamespaceListerExpansion allows custom methods to be added to
 // PodMonitorNamespaceLister.
 type PodMonitorNamespaceListerExpansion interface{}
+
+// ProbeListerExpansion allows custom methods to be added to
+// ProbeLister.
+type ProbeListerExpansion interface{}
+
+// ProbeNamespaceListerExpansion allows custom methods to be added to
+// ProbeNamespaceLister.
+type ProbeNamespaceListerExpansion interface{}
 
 // PrometheusListerExpansion allows custom methods to be added to
 // PrometheusLister.

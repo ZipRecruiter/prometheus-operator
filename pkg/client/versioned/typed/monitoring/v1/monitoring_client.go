@@ -1,4 +1,4 @@
-// Copyright 2018 The prometheus-operator Authors
+// Copyright The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -26,6 +26,7 @@ type MonitoringV1Interface interface {
 	RESTClient() rest.Interface
 	AlertmanagersGetter
 	PodMonitorsGetter
+	ProbesGetter
 	PrometheusesGetter
 	PrometheusRulesGetter
 	ServiceMonitorsGetter
@@ -43,6 +44,10 @@ func (c *MonitoringV1Client) Alertmanagers(namespace string) AlertmanagerInterfa
 
 func (c *MonitoringV1Client) PodMonitors(namespace string) PodMonitorInterface {
 	return newPodMonitors(c, namespace)
+}
+
+func (c *MonitoringV1Client) Probes(namespace string) ProbeInterface {
+	return newProbes(c, namespace)
 }
 
 func (c *MonitoringV1Client) Prometheuses(namespace string) PrometheusInterface {

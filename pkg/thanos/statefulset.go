@@ -20,10 +20,10 @@ import (
 	"path"
 	"strings"
 
+	"github.com/pkg/errors"
 	monitoringv1 "github.com/ZipRecruiter/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/ZipRecruiter/prometheus-operator/pkg/k8sutil"
 	"github.com/ZipRecruiter/prometheus-operator/pkg/operator"
-	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -53,12 +53,6 @@ var (
 
 func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapNames []string, inputHash string) (*appsv1.StatefulSet, error) {
 
-	if tr.Spec.Image == "" {
-		tr.Spec.Image = config.ThanosDefaultBaseImage
-	}
-	if !strings.Contains(tr.Spec.Image, ":") {
-		tr.Spec.Image = tr.Spec.Image + ":" + operator.DefaultThanosVersion
-	}
 	if tr.Spec.Resources.Requests == nil {
 		tr.Spec.Resources.Requests = v1.ResourceList{}
 	}
@@ -128,8 +122,7 @@ func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapN
 			},
 		})
 	} else {
-		pvcTemplate := storageSpec.VolumeClaimTemplate
-		pvcTemplate.CreationTimestamp = metav1.Time{}
+		pvcTemplate := operator.MakeVolumeClaimTemplate(storageSpec.VolumeClaimTemplate)
 		if pvcTemplate.Name == "" {
 			pvcTemplate.Name = volumeName(tr.Name)
 		}
@@ -140,7 +133,7 @@ func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapN
 		}
 		pvcTemplate.Spec.Resources = storageSpec.VolumeClaimTemplate.Spec.Resources
 		pvcTemplate.Spec.Selector = storageSpec.VolumeClaimTemplate.Spec.Selector
-		statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, pvcTemplate)
+		statefulset.Spec.VolumeClaimTemplates = append(statefulset.Spec.VolumeClaimTemplates, *pvcTemplate)
 	}
 
 	for _, volume := range tr.Spec.Volumes {
@@ -157,6 +150,17 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 
 	if tr.Spec.QueryConfig == nil && len(tr.Spec.QueryEndpoints) < 1 {
 		return nil, errors.New(tr.GetName() + ": thanos ruler requires query config or at least one query endpoint to be specified")
+	}
+
+	trImagePath, err := operator.BuildImagePath(
+		tr.Spec.Image,
+		operator.StringValOrDefault(config.ThanosDefaultBaseImage, operator.DefaultThanosBaseImage),
+		operator.DefaultThanosVersion,
+		"",
+		"",
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to build image path")
 	}
 
 	if tr.Spec.EvaluationInterval == "" {
@@ -194,9 +198,24 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		trCLIArgs = append(trCLIArgs, fmt.Sprintf("--alert.label-drop=%s", lb))
 	}
 
+	ports := []v1.ContainerPort{
+		{
+			Name:          "grpc",
+			ContainerPort: 10901,
+			Protocol:      v1.ProtocolTCP,
+		},
+	}
 	if tr.Spec.ListenLocal {
 		trCLIArgs = append(trCLIArgs, "--http-address=localhost:10902")
+	} else {
+		ports = append(ports,
+			v1.ContainerPort{
+				Name:          tr.Spec.PortName,
+				ContainerPort: 10902,
+				Protocol:      v1.ProtocolTCP,
+			})
 	}
+
 	if tr.Spec.LogLevel != "" && tr.Spec.LogLevel != "info" {
 		trCLIArgs = append(trCLIArgs, fmt.Sprintf("--log.level=%s", tr.Spec.LogLevel))
 	}
@@ -245,6 +264,10 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		})
 	}
 
+	if tr.Spec.ObjectStorageConfigFile != nil {
+		trCLIArgs = append(trCLIArgs, "--objstore.config-file="+*tr.Spec.ObjectStorageConfigFile)
+	}
+
 	if tr.Spec.TracingConfig != nil {
 		trCLIArgs = append(trCLIArgs, "--tracing.config=$(TRACING_CONFIG)")
 		trEnvVars = append(trEnvVars, v1.EnvVar{
@@ -280,44 +303,40 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		trCLIArgs = append(trCLIArgs, fmt.Sprintf("--alert.query-url=%s", tr.Spec.AlertQueryURL))
 	}
 
-	localReloadURL := &url.URL{
-		Scheme: "http",
-		Host:   config.LocalHost + ":10902",
-		Path:   path.Clean(tr.Spec.RoutePrefix + "/-/reload"),
-	}
-
-	additionalContainers := []v1.Container{}
+	var additionalContainers []v1.Container
 	if len(ruleConfigMapNames) != 0 {
-		reloader := v1.Container{
-			Name:  "rules-configmap-reloader",
-			Image: config.ConfigReloaderImage,
-			Args: []string{
-				fmt.Sprintf("--webhook-url=%s", localReloadURL),
-			},
-			VolumeMounts: []v1.VolumeMount{},
-			Resources: v1.ResourceRequirements{
-				Limits: v1.ResourceList{}, Requests: v1.ResourceList{}},
-			TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
-		}
-
-		if config.ConfigReloaderCPU != "0" {
-			reloader.Resources.Limits[v1.ResourceCPU] = resource.MustParse(config.ConfigReloaderCPU)
-			reloader.Resources.Requests[v1.ResourceCPU] = resource.MustParse(config.ConfigReloaderCPU)
-		}
-		if config.ConfigReloaderMemory != "0" {
-			reloader.Resources.Limits[v1.ResourceMemory] = resource.MustParse(config.ConfigReloaderMemory)
-			reloader.Resources.Requests[v1.ResourceMemory] = resource.MustParse(config.ConfigReloaderMemory)
-		}
+		var (
+			configReloaderArgs         []string
+			configReloaderVolumeMounts []v1.VolumeMount
+		)
 
 		for _, name := range ruleConfigMapNames {
 			mountPath := rulesDir + "/" + name
-			reloader.VolumeMounts = append(reloader.VolumeMounts, v1.VolumeMount{
+			configReloaderVolumeMounts = append(configReloaderVolumeMounts, v1.VolumeMount{
 				Name:      name,
 				MountPath: mountPath,
 			})
-			reloader.Args = append(reloader.Args, fmt.Sprintf("--volume-dir=%s", mountPath))
+			configReloaderArgs = append(configReloaderArgs, fmt.Sprintf("--watched-dir=%s", mountPath))
 		}
-		additionalContainers = append(additionalContainers, reloader)
+
+		additionalContainers = append(
+			additionalContainers,
+			operator.CreateConfigReloader(
+				config.ReloaderConfig,
+				url.URL{
+					Scheme: "http",
+					Host:   config.LocalHost + ":10902",
+					Path:   path.Clean(tr.Spec.RoutePrefix + "/-/reload"),
+				},
+				tr.Spec.ListenLocal,
+				config.LocalHost,
+				tr.Spec.LogFormat,
+				tr.Spec.LogLevel,
+				configReloaderArgs,
+				configReloaderVolumeMounts,
+				-1,
+			),
+		)
 	}
 
 	podAnnotations := map[string]string{}
@@ -371,24 +390,13 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 
 	operatorContainers := append([]v1.Container{
 		{
-			Name:         "thanos-ruler",
-			Image:        tr.Spec.Image,
-			Args:         trCLIArgs,
-			Env:          trEnvVars,
-			VolumeMounts: trVolumeMounts,
-			Resources:    tr.Spec.Resources,
-			Ports: []v1.ContainerPort{
-				{
-					Name:          "grpc",
-					ContainerPort: 10901,
-					Protocol:      v1.ProtocolTCP,
-				},
-				{
-					Name:          "http",
-					ContainerPort: 10902,
-					Protocol:      v1.ProtocolTCP,
-				},
-			},
+			Name:                     "thanos-ruler",
+			Image:                    trImagePath,
+			Args:                     trCLIArgs,
+			Env:                      trEnvVars,
+			VolumeMounts:             trVolumeMounts,
+			Resources:                tr.Spec.Resources,
+			Ports:                    ports,
 			TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
 		},
 	}, additionalContainers...)
@@ -427,6 +435,7 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 				SecurityContext:               tr.Spec.SecurityContext,
 				Tolerations:                   tr.Spec.Tolerations,
 				Affinity:                      tr.Spec.Affinity,
+				TopologySpreadConstraints:     tr.Spec.TopologySpreadConstraints,
 			},
 		},
 	}, nil
@@ -459,13 +468,13 @@ func makeStatefulSetService(tr *monitoringv1.ThanosRuler, config Config) *v1.Ser
 				{
 					Name:       tr.Spec.PortName,
 					Port:       10902,
-					TargetPort: intstr.FromInt(10902),
+					TargetPort: intstr.FromString(tr.Spec.PortName),
 					Protocol:   v1.ProtocolTCP,
 				},
 				{
 					Name:       "grpc",
 					Port:       10901,
-					TargetPort: intstr.FromInt(10901),
+					TargetPort: intstr.FromString("grpc"),
 					Protocol:   v1.ProtocolTCP,
 				},
 			},

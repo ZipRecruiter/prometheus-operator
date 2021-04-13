@@ -29,6 +29,7 @@ const (
 // ThanosRuler defines a ThanosRuler deployment.
 // +genclient
 // +k8s:openapi-gen=true
+// +kubebuilder:resource:categories="prometheus-operator"
 type ThanosRuler struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
@@ -58,7 +59,7 @@ type ThanosRulerList struct {
 // +k8s:openapi-gen=true
 type ThanosRulerSpec struct {
 	// PodMetadata contains Labels and Annotations gets propagated to the thanos ruler pods.
-	PodMetadata *PodMeta `json:"podMetadata,omitempty"`
+	PodMetadata *EmbeddedObjectMetadata `json:"podMetadata,omitempty"`
 	// Thanos container image URL.
 	Image string `json:"image,omitempty"`
 	// An optional list of references to secrets in the same namespace
@@ -79,6 +80,8 @@ type ThanosRulerSpec struct {
 	Affinity *v1.Affinity `json:"affinity,omitempty"`
 	// If specified, the pod's tolerations.
 	Tolerations []v1.Toleration `json:"tolerations,omitempty"`
+	// If specified, the pod's topology spread constraints.
+	TopologySpreadConstraints []v1.TopologySpreadConstraint `json:"topologySpreadConstraints,omitempty"`
 	// SecurityContext holds pod-level security attributes and common container settings.
 	// This defaults to the default PodSecurityContext.
 	SecurityContext *v1.PodSecurityContext `json:"securityContext,omitempty"`
@@ -93,7 +96,11 @@ type ThanosRulerSpec struct {
 	// be appended to other volumes that are generated as a result of StorageSpec objects.
 	Volumes []v1.Volume `json:"volumes,omitempty"`
 	// ObjectStorageConfig configures object storage in Thanos.
+	// Alternative to ObjectStorageConfigFile, and lower order priority.
 	ObjectStorageConfig *v1.SecretKeySelector `json:"objectStorageConfig,omitempty"`
+	// ObjectStorageConfigFile specifies the path of the object storage configuration file.
+	// When used alongside with ObjectStorageConfig, ObjectStorageConfigFile takes precedence.
+	ObjectStorageConfigFile *string `json:"objectStorageConfigFile,omitempty"`
 	// ListenLocal makes the Thanos ruler listen on loopback, so that it
 	// does not bind against the Pod IP.
 	ListenLocal bool `json:"listenLocal,omitempty"`
@@ -123,6 +130,10 @@ type ThanosRulerSpec struct {
 	// and metric that is user created. The label value will always be the namespace of the object that is
 	// being created.
 	EnforcedNamespaceLabel string `json:"enforcedNamespaceLabel,omitempty"`
+	// PrometheusRulesExcludedFromEnforce - list of Prometheus rules to be excluded from enforcing
+	// of adding namespace labels. Works only if enforcedNamespaceLabel set to true.
+	// Make sure both ruleNamespace and ruleName are set for each pair
+	PrometheusRulesExcludedFromEnforce []PrometheusRuleExcludeConfig `json:"prometheusRulesExcludedFromEnforce,omitempty"`
 	// Log level for ThanosRuler to be configured with.
 	LogLevel string `json:"logLevel,omitempty"`
 	// Log format for ThanosRuler to be configured with.
@@ -139,7 +150,7 @@ type ThanosRulerSpec struct {
 	// containers. This can be used to allow adding an authentication proxy to a ThanosRuler pod or
 	// to change the behavior of an operator generated container. Containers described here modify
 	// an operator generated container if they share the same name and modifications are done via a
-	// strategic merge patch. The current container names are: `thanos-ruler` and `rules-configmap-reloader`.
+	// strategic merge patch. The current container names are: `thanos-ruler` and `config-reloader`.
 	// Overriding containers is entirely outside the scope of what the maintainers will support and by doing
 	// so, you accept that this behaviour may break at any time without notice.
 	Containers []v1.Container `json:"containers,omitempty"`
